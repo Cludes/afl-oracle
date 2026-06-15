@@ -26,10 +26,13 @@ export async function onRequestGet(context) {
   const cached = await cache.match(cacheKey);
   if (cached) return cors(cached);
 
-  let games, standings, tips;
+  let games, standings, tips, standingsPrev;
   try {
-    const [g, s, t] = await Promise.all([sq(`games;year=${Y}`), sq(`standings;year=${Y}`), sq(`tips;year=${Y}`)]);
-    games = g.games || []; standings = s.standings || []; tips = t.tips || [];
+    const [g, s, t, sp] = await Promise.all([
+      sq(`games;year=${Y}`), sq(`standings;year=${Y}`), sq(`tips;year=${Y}`),
+      sq(`standings;year=${Y - 1}`).catch(() => ({ standings: [] })),
+    ]);
+    games = g.games || []; standings = s.standings || []; tips = t.tips || []; standingsPrev = sp.standings || [];
   } catch (e) {
     return cors(json({ error: String(e) }, 502));
   }
@@ -49,7 +52,7 @@ export async function onRequestGet(context) {
   const ids = new Set(games.filter(g => g.round === nextRound).map(g => g.id));
   const nextRoundTips = tips.filter(t => ids.has(t.gameid));
 
-  const resp = json({ fetched_at: new Date().toISOString(), year: Y, games, standings, experts, nextRound, nextRoundTips });
+  const resp = json({ fetched_at: new Date().toISOString(), year: Y, games, standings, standingsPrev, experts, nextRound, nextRoundTips });
   resp.headers.set('Cache-Control', `public, max-age=${CACHE_TTL}`);
   context.waitUntil(cache.put(cacheKey, resp.clone()));
   return cors(resp);

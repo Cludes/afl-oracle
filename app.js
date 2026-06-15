@@ -1,7 +1,7 @@
 'use strict';
 
-const HGA = 35;   // home-ground advantage, Elo points
-const K = 28;     // Elo update factor
+const HGA = 40;   // home-ground advantage, Elo points
+const K = 20;     // Elo update factor
 const MARGIN_DIV = 5; // Elo diff -> predicted margin
 
 const $ = id => document.getElementById(id);
@@ -26,6 +26,8 @@ async function load() {
 function prep() {
   for (const t of DATA.standings) { TEAM[t.id] = t.name; RANK[t.id] = t.rank; }
   for (const g of DATA.games) { TEAM[g.hteamid] = g.hteam; TEAM[g.ateamid] = g.ateam; }
+  // pre-season prior: seed Elo from last year's final ladder so early-round picks aren't coin-flips
+  for (const t of (DATA.standingsPrev || [])) elo[t.id] = 1500 + (9.5 - t.rank) * 14;
 
   const sorted = [...DATA.games].filter(g => g.hteamid && g.ateamid).sort((a, b) => (a.unixtime || 0) - (b.unixtime || 0));
   for (const g of sorted) {
@@ -48,7 +50,10 @@ function prep() {
       }
       const am = g.hscore - g.ascore;
       const actualHome = draw ? 0.5 : (am > 0 ? 1 : 0);
-      const ch = K * Math.log(Math.abs(am) + 1) * (actualHome - pHome);
+      // 538-style margin-of-victory multiplier (damps blowouts, corrects upsets faster)
+      const winnerEdge = actualHome === 1 ? (eH + HGA - eA) : (eA - (eH + HGA));
+      const mov = Math.log(Math.abs(am) + 1) * (2.2 / (winnerEdge * 0.001 + 2.2));
+      const ch = K * mov * (actualHome - pHome);
       elo[g.hteamid] = eH + ch; elo[g.ateamid] = eA - ch;
     }
   }
