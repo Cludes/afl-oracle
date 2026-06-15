@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="A stat model's locked-in AFL tips each round, graded against the experts." />
+  <title>AFL Oracle</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <meta name="theme-color" content="#0c1014" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main id="app">
+    <header>
+      <span class="ball">🏉</span>
+      <div class="title">
+        <h1>AFL Oracle</h1>
+        <div class="sub">A stat model's locked-in tips, graded against the experts <span id="status" class="dot"></span> <span id="updated" class="muted"></span></div>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab on" data-p="p-tips">This Round</button>
+      <button class="tab" data-p="p-ladder">Ladder</button>
+      <button class="tab" data-p="p-board">Tipster Ranking</button>
+    </nav>
+
+    <section id="p-tips" class="panel on">
+      <h2 id="round" class="phead">Round</h2>
+      <div id="tips" class="tips"><div class="empty">Loading…</div></div>
+    </section>
+
+    <section id="p-ladder" class="panel">
+      <div id="ladder" class="grid"></div>
+    </section>
+
+    <section id="p-board" class="panel">
+      <p id="boardnote" class="note"></p>
+      <div id="board" class="grid"></div>
+    </section>
+
+    <footer>
+      Picks come from a transparent Elo model (home-ground advantage + margin-aware updates), computed only
+      from games <b>before</b> each round - no hindsight. Data: <a href="https://api.squiggle.com.au/" target="_blank" rel="noopener">Squiggle</a>.
+      Not affiliated with the AFL. Bet responsibly (or don't).
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
