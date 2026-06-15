@@ -6,9 +6,10 @@
  * model's season accuracy, finds the next round, adds CORS, edge-caches 10min.
  */
 
-const Y = new Date().getFullYear();          // AFL season = calendar year
 const UA = 'afl-oracle/1.0 (+https://afl-oracle.pages.dev)';
 const CACHE_TTL = 600;
+// NOTE: new Date() at module top-level returns epoch (1970) in Workers - the clock is
+// only available inside a request. So the season year is computed in the handler.
 
 async function sq(q) {
   const r = await fetch(`https://api.squiggle.com.au/?q=${q}`, { headers: { 'User-Agent': UA, 'Accept': 'application/json' } });
@@ -19,8 +20,9 @@ async function sq(q) {
 export async function onRequestOptions() { return cors(new Response(null, { status: 204 })); }
 
 export async function onRequestGet(context) {
+  const Y = new Date().getFullYear();   // AFL season = calendar year (computed per-request)
   const cache = caches.default;
-  const cacheKey = new Request(new URL(context.request.url).origin + '/__afl', { method: 'GET' });
+  const cacheKey = new Request(new URL(context.request.url).origin + '/__afl_v2', { method: 'GET' });
   const cached = await cache.match(cacheKey);
   if (cached) return cors(cached);
 
