@@ -33,6 +33,13 @@ h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.4px; }
 .panel { display: none; } .panel.on { display: block; }
 .phead { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); margin-bottom: 12px; }
 
+.roundnav { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.roundnav .phead { margin-bottom: 0; }
+.rnav { width: 28px; height: 28px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: 16px; line-height: 1; cursor: pointer; font-family: var(--font); }
+.rnav:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.rnav:disabled { opacity: 0.35; cursor: default; }
+.roundrec { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--dim); font-variant-numeric: tabular-nums; }
+
 .tips { display: flex; flex-direction: column; gap: 10px; }
 .game { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; border-left: 3px solid var(--border); }
 .game.hit { border-left-color: var(--green); }

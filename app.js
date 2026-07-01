@@ -10,6 +10,7 @@ const getElo = id => (id in elo ? elo[id] : 1500);
 const expHome = (eH, eA) => 1 / (1 + Math.pow(10, -((eH + HGA - eA) / 400)));
 
 let DATA = null, TEAM = {}, RANK = {}, FORM = {}, PRED = {}, OUR = { correct: 0, total: 0 };
+let VIEW_ROUND = null; // round currently shown on the "This Round" tab (defaults to next round)
 
 async function load() {
   try {
@@ -79,9 +80,37 @@ function reason(g, p) {
   return bits.slice(0, 3).join(', ') + '.';
 }
 
+const roundsList = () => [...new Set(DATA.games.map(g => g.round))].sort((a, b) => a - b);
+
+function roundRecord(r) {
+  let c = 0, t = 0;
+  for (const g of DATA.games.filter(g => g.round === r)) {
+    const p = PRED[g.id];
+    if (p && g.complete === 100 && g.winnerteamid != null && g.winnerteamid !== 0) { t++; if (p.pickId === g.winnerteamid) c++; }
+  }
+  return { c, t };
+}
+
+function changeRound(delta) {
+  const rounds = roundsList();
+  let idx = rounds.indexOf(VIEW_ROUND);
+  idx = Math.min(Math.max(idx + delta, 0), rounds.length - 1);
+  VIEW_ROUND = rounds[idx];
+  renderTips();
+}
+
 function renderTips() {
-  const r = DATA.nextRound;
+  const rounds = roundsList();
+  if (VIEW_ROUND == null) VIEW_ROUND = DATA.nextRound;
+  let idx = rounds.indexOf(VIEW_ROUND);
+  if (idx < 0) idx = rounds.length - 1;
+  VIEW_ROUND = rounds[idx];
+  const r = VIEW_ROUND;
   $('round').textContent = 'Round ' + r;
+  $('rprev').disabled = idx <= 0;
+  $('rnext').disabled = idx >= rounds.length - 1;
+  const rec = roundRecord(r);
+  $('roundrec').textContent = rec.t ? `${rec.c}/${rec.t} correct` : (r === DATA.nextRound ? 'upcoming' : '');
   const games = DATA.games.filter(g => g.round === r).sort((a, b) => (a.unixtime || 0) - (b.unixtime || 0));
   if (!games.length) { $('tips').innerHTML = '<div class="empty">No fixtures.</div>'; return; }
   $('tips').innerHTML = games.map(g => {
@@ -132,5 +161,8 @@ document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () =>
   document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'));
   t.classList.add('on'); $(t.dataset.p).classList.add('on');
 }));
+
+$('rprev').addEventListener('click', () => changeRound(-1));
+$('rnext').addEventListener('click', () => changeRound(1));
 
 load();
