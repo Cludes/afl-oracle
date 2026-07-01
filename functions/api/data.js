@@ -37,10 +37,15 @@ export async function onRequestGet(context) {
     return cors(json({ error: String(e) }, 502));
   }
 
+  // drawn games (Squiggle marks a draw as winnerteamid null) are excluded from grading for
+  // everyone, so the model and the experts are compared on the identical decisive-game set
+  const drawnGames = new Set(games.filter((g) => g.complete === 100 && (g.winnerteamid == null || g.winnerteamid === 0)).map((g) => g.id));
+
   // expert leaderboard: tally each model's correct/total/bits over graded tips
   const tally = {};
   for (const t of tips) {
     if (t.correct !== 0 && t.correct !== 1) continue;
+    if (drawnGames.has(t.gameid)) continue;
     const s = t.source; if (!s) continue;
     (tally[s] = tally[s] || { source: s, correct: 0, total: 0, bits: 0 });
     tally[s].correct += t.correct; tally[s].total++; tally[s].bits += parseFloat(t.bits) || 0;

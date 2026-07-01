@@ -41,8 +41,10 @@ function prep() {
       margin: Math.max(1, Math.round(Math.abs(eH + HGA - eA) / MARGIN_DIV)),
       eloDiff: Math.round(Math.abs(eH + HGA - eA)), homePick,
     };
-    if (g.complete === 100 && g.winnerteamid != null) {
-      const draw = g.winnerteamid === 0;
+    if (g.complete === 100) {
+      // Squiggle marks a draw with winnerteamid null (not 0) - a completed game with no winner is a draw,
+      // excluded from grading (the margin multiplier already makes it a no-op for Elo since margin = 0)
+      const draw = g.winnerteamid == null || g.winnerteamid === 0;
       if (!draw) {
         OUR.total++; const right = PRED[g.id].pickId === g.winnerteamid;
         if (right) OUR.correct++; PRED[g.id].right = right;
