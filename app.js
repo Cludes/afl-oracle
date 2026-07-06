@@ -1,13 +1,48 @@
 'use strict';
 
-const HGA = 40;   // home-ground advantage, Elo points
-const K = 20;     // Elo update factor
-const MARGIN_DIV = 5; // Elo diff -> predicted margin
+// Travel-aware home-ground advantage, tuned by leave-one-season-out backtest on 2021-2026.
+// A flat HGA treats a Perth road trip like a cross-town derby; interstate travel is the single
+// biggest AFL-specific factor, so the edge grows with how far the away side had to travel.
+const HGA_BASE = 20;   // base home edge (same-state game)
+const HGA_TRAVEL = 10; // extra when the away team is playing interstate
+const HGA_WEST = 30;   // extra again when the trip crosses to/from WA (the long haul)
+const K = 10;          // Elo update factor (lower = steadier ratings; was over-reacting at 20)
+const MARGIN_DIV = 5;  // Elo diff -> predicted margin
+const PRIOR_SCALE = 5; // pre-season prior spread from last year's ladder (was 14 - too strong)
+
+const VENUE_STATE = {
+  'M.C.G.': 'VIC', 'Docklands': 'VIC', 'Kardinia Park': 'VIC', 'Eureka Stadium': 'VIC',
+  'Adelaide Oval': 'SA', 'Norwood Oval': 'SA', 'Barossa Park': 'SA', 'Adelaide Hills': 'SA',
+  'Perth Stadium': 'WA', 'Hands Oval': 'WA',
+  'Gabba': 'QLD', 'Carrara': 'QLD', "Cazaly's Stadium": 'QLD',
+  'S.C.G.': 'NSW', 'Sydney Showground': 'NSW', 'Stadium Australia': 'NSW', 'Manuka Oval': 'ACT',
+  'York Park': 'TAS', 'Bellerive Oval': 'TAS', 'Marrara Oval': 'NT', 'Traeger Park': 'NT',
+};
+const TEAM_STATE = {
+  'Adelaide': 'SA', 'Brisbane Lions': 'QLD', 'Carlton': 'VIC', 'Collingwood': 'VIC',
+  'Essendon': 'VIC', 'Fremantle': 'WA', 'Geelong': 'VIC', 'Gold Coast': 'QLD',
+  'Greater Western Sydney': 'NSW', 'Hawthorn': 'VIC', 'Melbourne': 'VIC', 'North Melbourne': 'VIC',
+  'Port Adelaide': 'SA', 'Richmond': 'VIC', 'St Kilda': 'VIC', 'Sydney': 'NSW',
+  'West Coast': 'WA', 'Western Bulldogs': 'VIC',
+};
+
+// effective home-ground advantage for a game, accounting for interstate travel
+function hgaFor(g) {
+  const vs = VENUE_STATE[g.venue];
+  if (!vs) return HGA_BASE; // unknown venue -> fall back to base edge
+  const hs = TEAM_STATE[g.hteam], as = TEAM_STATE[g.ateam];
+  let h = HGA_BASE;
+  const awayInterstate = as && vs !== as;
+  const homeInterstate = hs && vs !== hs;
+  if (awayInterstate) h += HGA_TRAVEL + (vs === 'WA' || as === 'WA' ? HGA_WEST : 0);
+  else if (homeInterstate) h -= HGA_TRAVEL; // home side is the one that travelled (neutral/away venue)
+  return h;
+}
 
 const $ = id => document.getElementById(id);
 const elo = {};
 const getElo = id => (id in elo ? elo[id] : 1500);
-const expHome = (eH, eA) => 1 / (1 + Math.pow(10, -((eH + HGA - eA) / 400)));
+const expHome = (eH, eA, H) => 1 / (1 + Math.pow(10, -((eH + H - eA) / 400)));
 
 let DATA = null, TEAM = {}, RANK = {}, FORM = {}, PRED = {}, OUR = { correct: 0, total: 0 };
 let VIEW_ROUND = null; // round currently shown on the "This Round" tab (defaults to next round)
@@ -28,18 +63,19 @@ function prep() {
   for (const t of DATA.standings) { TEAM[t.id] = t.name; RANK[t.id] = t.rank; }
   for (const g of DATA.games) { TEAM[g.hteamid] = g.hteam; TEAM[g.ateamid] = g.ateam; }
   // pre-season prior: seed Elo from last year's final ladder so early-round picks aren't coin-flips
-  for (const t of (DATA.standingsPrev || [])) elo[t.id] = 1500 + (9.5 - t.rank) * 14;
+  for (const t of (DATA.standingsPrev || [])) elo[t.id] = 1500 + (9.5 - t.rank) * PRIOR_SCALE;
 
   const sorted = [...DATA.games].filter(g => g.hteamid && g.ateamid).sort((a, b) => (a.unixtime || 0) - (b.unixtime || 0));
   for (const g of sorted) {
     const eH = getElo(g.hteamid), eA = getElo(g.ateamid);
-    const pHome = expHome(eH, eA);
+    const H = hgaFor(g);
+    const pHome = expHome(eH, eA, H);
     const homePick = pHome >= 0.5;
     PRED[g.id] = {
       pickId: homePick ? g.hteamid : g.ateamid,
       conf: Math.round(Math.max(pHome, 1 - pHome) * 100),
-      margin: Math.max(1, Math.round(Math.abs(eH + HGA - eA) / MARGIN_DIV)),
-      eloDiff: Math.round(Math.abs(eH + HGA - eA)), homePick,
+      margin: Math.max(1, Math.round(Math.abs(eH + H - eA) / MARGIN_DIV)),
+      eloDiff: Math.round(Math.abs(eH + H - eA)), homePick,
     };
     if (g.complete === 100) {
       // Squiggle marks a draw with winnerteamid null (not 0) - a completed game with no winner is a draw,
@@ -54,7 +90,7 @@ function prep() {
       const am = g.hscore - g.ascore;
       const actualHome = draw ? 0.5 : (am > 0 ? 1 : 0);
       // 538-style margin-of-victory multiplier (damps blowouts, corrects upsets faster)
-      const winnerEdge = actualHome === 1 ? (eH + HGA - eA) : (eA - (eH + HGA));
+      const winnerEdge = actualHome === 1 ? (eH + H - eA) : (eA - (eH + H));
       const mov = Math.log(Math.abs(am) + 1) * (2.2 / (winnerEdge * 0.001 + 2.2));
       const ch = K * mov * (actualHome - pHome);
       elo[g.hteamid] = eH + ch; elo[g.ateamid] = eA - ch;
