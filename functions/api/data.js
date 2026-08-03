@@ -6,7 +6,7 @@
  * model's season accuracy, finds the next round, adds CORS, edge-caches 10min.
  */
 
-const UA = 'afl-oracle/1.0 (+https://afl-oracle.pages.dev)';
+const UA = 'Cludestradamus/1.0 (+https://afl-oracle.pages.dev)';
 const CACHE_TTL = 600;
 // NOTE: new Date() at module top-level returns epoch (1970) in Workers - the clock is
 // only available inside a request. So the season year is computed in the handler.

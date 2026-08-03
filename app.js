@@ -183,7 +183,7 @@ function renderBoard() {
   const rows = DATA.experts
     .filter(e => e.total >= minTotal)
     .map(e => ({ source: e.source, correct: e.correct, total: e.total, pct: e.correct / e.total * 100 }));
-  rows.push({ source: '★ AFL Oracle (this model)', correct: OUR.correct, total: OUR.total, pct: OUR.pct, us: true });
+  rows.push({ source: '★ Cludestradamus (this model)', correct: OUR.correct, total: OUR.total, pct: OUR.pct, us: true });
   rows.sort((a, b) => b.pct - a.pct);
   const ourRank = rows.findIndex(r => r.us) + 1;
   $('boardnote').textContent = `This model ranks #${ourRank} of ${rows.length} tipsters (${OUR.correct}/${OUR.total}, ${OUR.pct.toFixed(1)}%).`;
