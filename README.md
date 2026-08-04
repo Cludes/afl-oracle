@@ -18,6 +18,29 @@ Data comes from the keyless [Squiggle API](https://api.squiggle.com.au/) (games,
 model's tips), proxied through a Cloudflare Pages Function (`/api/data`) that adds CORS, tallies the
 expert leaderboard, and caches for 10 minutes.
 
+## Tips API (`/api/tips`)
+A machine-readable feed of the current round's tips, computed on demand from the same `model.js` the
+site uses (so published tips never drift from what's shown). Each tip carries the tipped team, the
+home-win probability (`hconfidence`, 0-100), and the predicted margin from the home team's
+perspective (`hmargin`). Add `?round=N` for a past round.
+
+    https://afl-oracle.pages.dev/api/tips
+
+## Entering tipping competitions
+The models on the Tipster Ranking are the Squiggle bot community. To compete for real:
+
+- **Squiggle** (the leaderboard here) - curated, pull-based, so **no submission code needed**: message
+  Max Barry ([@SquiggleAFL](https://twitter.com/SquiggleAFL) / the Squiggle Discord) to be added and
+  point his crawler at `/api/tips` (it already returns win probability + margin in Squiggle's format).
+- **Monash Probabilistic Footy Tipping Competition** (probabilistic-footy.monash.edu) - free and open
+  to bots, but submission is a login-gated web form (Alias + Password), with no public API. Automating
+  it needs a weekly job that logs in and POSTs the probabilities from `/api/tips`. That job is **not
+  built yet** - it needs a registered account first (contact monash.footy@gmail.com), then credentials
+  stored as GitHub Actions secrets.
+
+Courtesy: Squiggle's API rules ask a bot's User-Agent to include a contact email; ours
+(`Cludestradamus/1.0 (+https://afl-oracle.pages.dev)`) currently has a URL only.
+
 ## Deploy
 Static site + one Function -> Cloudflare Pages project `afl-oracle` via GitHub Action on push to
 `master` (secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`).
