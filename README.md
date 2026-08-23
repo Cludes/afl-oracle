@@ -32,11 +32,22 @@ The models on the Tipster Ranking are the Squiggle bot community. To compete for
 - **Squiggle** (the leaderboard here) - curated, pull-based, so **no submission code needed**: message
   Max Barry ([@SquiggleAFL](https://twitter.com/SquiggleAFL) / the Squiggle Discord) to be added and
   point his crawler at `/api/tips` (it already returns win probability + margin in Squiggle's format).
-- **Monash Probabilistic Footy Tipping Competition** (probabilistic-footy.monash.edu) - free and open
-  to bots, but submission is a login-gated web form (Alias + Password), with no public API. Automating
-  it needs a weekly job that logs in and POSTs the probabilities from `/api/tips`. That job is **not
-  built yet** - it needs a registered account first (contact monash.footy@gmail.com), then credentials
-  stored as GitHub Actions secrets.
+- **Monash Probabilistic Footy Tipping Competition** (probabilistic-footy.monash.edu) - free, open
+  to bots, but submission is a login-gated web form with no API. `scripts/submit-monash.mjs` drives
+  it: it reads `/api/tips`, logs in (`cgi-bin/presentTips.cgi.pl`), matches each of the form's
+  probability boxes to a game **by team name** (flipping the probability if the form lists the away
+  team first, and refusing to submit rather than guessing if a row will not match), and posts
+  `game1..gameN` as the home team's win probability, clamped to 0.01-0.99 so a wrong tip can't score
+  an infinite penalty. `.github/workflows/submit-monash-tips.yml` runs it Wed + Thu mornings AEST -
+  resubmitting a round overwrites the previous entry, so the second run just picks up any movement.
+  Credentials come from the repo secrets `MONASH_TIPPING_SECRET_USER` / `MONASH_TIPPING_SECRET_PW`.
+
+  Check it without submitting - locally, or via **Run workflow** with *dry_run* ticked:
+
+      MONASH_USER=.. MONASH_PASS=.. node scripts/submit-monash.mjs --dry-run
+
+  The other two Monash comps need a tipped side and a margin rather than a probability; pass
+  `MONASH_COMP=normal` or `gauss` only after teaching the script those extra fields.
 
 Courtesy: Squiggle's API rules ask a bot's User-Agent to include a contact email; ours
 (`Cludestradamus/1.0 (+https://afl-oracle.pages.dev)`) currently has a URL only.

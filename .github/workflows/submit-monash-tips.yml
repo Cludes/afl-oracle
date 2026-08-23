@@ -1,0 +1,44 @@
+name: Submit tips to Monash
+
+# The Monash probabilistic comp has no API, so this logs into its web form and posts the
+# probabilities from /api/tips. It runs twice before each round (Wed and Thu mornings AEST)
+# because resubmitting a round overwrites the previous entry - the second run just picks up
+# any fixture or model movement since the first.
+
+on:
+  schedule:
+    - cron: '0 23 * * 2'   # Wed 09:00 AEST / 10:00 AEDT
+    - cron: '0 23 * * 3'   # Thu 09:00 AEST / 10:00 AEDT
+  workflow_dispatch:
+    inputs:
+      round:
+        description: 'Round number (blank = the round the feed is on)'
+        required: false
+      dry_run:
+        description: 'Parse and print the mapping without submitting'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: submit-monash
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Submit tips
+        env:
+          MONASH_USER: ${{ secrets.MONASH_TIPPING_SECRET_USER }}
+          MONASH_PASS: ${{ secrets.MONASH_TIPPING_SECRET_PW }}
+        run: |
+          node scripts/submit-monash.mjs \
+            ${{ inputs.round && format('--round {0}', inputs.round) || '' }} \
+            ${{ inputs.dry_run && '--dry-run' || '' }}
