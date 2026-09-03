@@ -46,6 +46,11 @@ The models on the Tipster Ranking are the Squiggle bot community. To compete for
 
       MONASH_USER=.. MONASH_PASS=.. node scripts/submit-monash.mjs --dry-run
 
+  The form's table is `Game | Ground | Home | Away`, and grounds carry club names ("Adelaide
+  Oval", "GIANTS Stadium"), while the clubs themselves are abbreviated (`P_Adelaide`, `W_Coast`,
+  `G_W_Sydney`). Reading those wrong tips the wrong team silently, so
+  `scripts/test-monash-matching.mjs` covers each case and runs before every submission.
+
   The other two Monash comps need a tipped side and a margin rather than a probability; pass
   `MONASH_COMP=normal` or `gauss` only after teaching the script those extra fields.
 

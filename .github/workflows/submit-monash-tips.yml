@@ -34,6 +34,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Check the game matching
+        run: node scripts/test-monash-matching.mjs
       - name: Submit tips
         env:
           MONASH_USER: ${{ secrets.MONASH_TIPPING_SECRET_USER }}
