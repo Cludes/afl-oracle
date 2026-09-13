@@ -14,6 +14,7 @@ export const HGA_WEST = 30;   // extra again when the trip crosses to/from WA (t
 export const K = 10;          // Elo update factor (lower = steadier ratings)
 export const MARGIN_DIV = 5;  // Elo diff -> predicted margin
 export const PRIOR_SCALE = 5; // pre-season prior spread from last year's ladder
+export const SHOW_DIV = 225;  // Elo diff -> REPORTED probability (see below)
 
 export const VENUE_STATE = {
   'M.C.G.': 'VIC', 'Docklands': 'VIC', 'Kardinia Park': 'VIC', 'Eureka Stadium': 'VIC',
@@ -44,7 +45,21 @@ export function hgaFor(g) {
   return h;
 }
 
+// Two curves over the same rating gap, on purpose.
+//
+// The 400 is Elo's own scale and drives the RATING UPDATE - changing it changes how the ratings
+// evolve, and with them which team gets tipped. Left exactly as it was.
+//
+// The reported probability is a separate question, and measured against 2022-2026 results the 400
+// curve is badly under-confident: games it called at 0.67 were won 83% of the time, and 0.76 won
+// 89%. Under the comp's log scoring that timidity is what costs points - it caps the upside of
+// being right without buying much protection. A 225 divisor is the same ordering stretched to
+// match reality. Leave-one-season-out (fit on four seasons, scored on the fifth) it is worth
+// +0.0257 bits/game, about 20%, and every fold independently chose 210-225. Because a pick is the
+// sign of (eH + H - eA) and not the divisor, the tipped side and the season accuracy record are
+// bit-for-bit unchanged: 70.0% either way.
 const expHome = (eH, eA, H) => 1 / (1 + Math.pow(10, -((eH + H - eA) / 400)));
+const expShow = (eH, eA, H) => 1 / (1 + Math.pow(10, -((eH + H - eA) / SHOW_DIV)));
 
 // Build ratings and per-game predictions from the /api/data payload (games, standings, standingsPrev).
 // Returns { elo, TEAM, RANK, FORM, PRED, OUR }. PRED[gameId] carries pickId, pHome (raw home-win
@@ -64,12 +79,13 @@ export function runModel(data) {
   for (const g of sorted) {
     const eH = getElo(g.hteamid), eA = getElo(g.ateamid);
     const H = hgaFor(g);
-    const pHome = expHome(eH, eA, H);
+    const pHome = expHome(eH, eA, H);   // drives the Elo update below
+    const pShow = expShow(eH, eA, H);   // what the site shows and the comps receive
     const homePick = pHome >= 0.5;
     PRED[g.id] = {
       pickId: homePick ? g.hteamid : g.ateamid,
-      pHome,
-      conf: Math.round(Math.max(pHome, 1 - pHome) * 100),
+      pHome: pShow,
+      conf: Math.round(Math.max(pShow, 1 - pShow) * 100),
       margin: Math.max(1, Math.round(Math.abs(eH + H - eA) / MARGIN_DIV)),
       eloDiff: Math.round(Math.abs(eH + H - eA)), homePick,
     };

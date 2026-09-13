@@ -14,6 +14,13 @@ An Elo model with travel-aware home-ground advantage and margin-aware updates. B
 each round's pick is computed using only games played *before* that round - so the season scorecard is
 a genuine, hindsight-free record, fully reproducible from public data. No AI, no API key.
 
+The **pick** and the **confidence** come off two different curves over the same rating gap. The pick
+uses Elo's own 400 scale, which also drives the rating update. The published probability uses a 225
+divisor, because measured against 2022-2026 results the 400 curve is badly under-confident - games it
+called at 0.67 were won 83% of the time. Since a pick is just the sign of the rating gap, sharpening
+the probability cannot change who is tipped: accuracy is 70.0% either way, while the comp-scoring
+rate improves about 20% (leave-one-season-out: +0.0257 bits/game).
+
 Data comes from the keyless [Squiggle API](https://api.squiggle.com.au/) (games, ladder, and every
 model's tips), proxied through a Cloudflare Pages Function (`/api/data`) that adds CORS, tallies the
 expert leaderboard, and caches for 10 minutes.
