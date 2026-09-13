@@ -13,8 +13,22 @@ export const HGA_TRAVEL = 10; // extra when the away team is playing interstate
 export const HGA_WEST = 30;   // extra again when the trip crosses to/from WA (the long haul)
 export const K = 10;          // Elo update factor (lower = steadier ratings)
 export const MARGIN_DIV = 5;  // Elo diff -> predicted margin
-export const PRIOR_SCALE = 5; // pre-season prior spread from last year's ladder
-export const SHOW_DIV = 225;  // Elo diff -> REPORTED probability (see below)
+export const PRIOR_SCALE = 5; // pre-season prior spread from last year's ladder (fallback only)
+export const SHOW_DIV = 250;  // Elo diff -> REPORTED probability (see below)
+export const CARRY = 0.6;     // share of last season's rating gap carried into this one
+export const HGA_HOME_GROUND = 10; // extra edge at the ground a club actually calls home
+
+// The ground each club plays most (2019-2025 home games). A club at its true home ground is worth
+// more than the flat same-state edge: Geelong at Kardinia Park is not Geelong at the MCG. Clubs
+// that share a stadium still differ - this is about familiarity, not the city.
+export const HOME_GROUND = {
+  'Adelaide': 'Adelaide Oval', 'Brisbane Lions': 'Gabba', 'Carlton': 'M.C.G.',
+  'Collingwood': 'M.C.G.', 'Essendon': 'Docklands', 'Fremantle': 'Perth Stadium',
+  'Geelong': 'Kardinia Park', 'Gold Coast': 'Carrara', 'Greater Western Sydney': 'Sydney Showground',
+  'Hawthorn': 'M.C.G.', 'Melbourne': 'M.C.G.', 'North Melbourne': 'Docklands',
+  'Port Adelaide': 'Adelaide Oval', 'Richmond': 'M.C.G.', 'St Kilda': 'Docklands',
+  'Sydney': 'S.C.G.', 'West Coast': 'Perth Stadium', 'Western Bulldogs': 'Docklands',
+};
 
 export const VENUE_STATE = {
   'M.C.G.': 'VIC', 'Docklands': 'VIC', 'Kardinia Park': 'VIC', 'Eureka Stadium': 'VIC',
@@ -42,6 +56,7 @@ export function hgaFor(g) {
   const homeInterstate = hs && vs !== hs;
   if (awayInterstate) h += HGA_TRAVEL + (vs === 'WA' || as === 'WA' ? HGA_WEST : 0);
   else if (homeInterstate) h -= HGA_TRAVEL; // home side is the one that travelled (neutral/away venue)
+  if (HOME_GROUND[g.hteam] === g.venue) h += HGA_HOME_GROUND;
   return h;
 }
 
@@ -53,11 +68,12 @@ export function hgaFor(g) {
 // The reported probability is a separate question, and measured against 2022-2026 results the 400
 // curve is badly under-confident: games it called at 0.67 were won 83% of the time, and 0.76 won
 // 89%. Under the comp's log scoring that timidity is what costs points - it caps the upside of
-// being right without buying much protection. A 225 divisor is the same ordering stretched to
-// match reality. Leave-one-season-out (fit on four seasons, scored on the fifth) it is worth
-// +0.0257 bits/game, about 20%, and every fold independently chose 210-225. Because a pick is the
-// sign of (eH + H - eA) and not the divisor, the tipped side and the season accuracy record are
-// bit-for-bit unchanged: 70.0% either way.
+// being right without buying much protection. SHOW_DIV is the same ordering stretched to match
+// reality. Because a pick is the sign of (eH + H - eA) and not the divisor, sharpening cannot
+// change which team is tipped.
+//
+// SHOW_DIV is tuned jointly with CARRY, leave-one-season-out: carried ratings spread further, so
+// they need less stretching (225 without the carry-over, 250 with it).
 const expHome = (eH, eA, H) => 1 / (1 + Math.pow(10, -((eH + H - eA) / 400)));
 const expShow = (eH, eA, H) => 1 / (1 + Math.pow(10, -((eH + H - eA) / SHOW_DIV)));
 
@@ -72,8 +88,13 @@ export function runModel(data) {
 
   for (const t of (data.standings || [])) { TEAM[t.id] = t.name; RANK[t.id] = t.rank; }
   for (const g of (data.games || [])) { TEAM[g.hteamid] = g.hteam; TEAM[g.ateamid] = g.ateam; }
-  // pre-season prior: seed Elo from last year's final ladder so early-round picks aren't coin-flips
+  // Pre-season prior. Last year's LADDER is a lossy summary - it knows Geelong finished 4th but not
+  // that they were the best side in the competition by the end. Where /api/data supplies last
+  // season's final ratings (data.eloPrev) we carry those instead, regressed toward the mean, which
+  // is worth more than every other feature tried put together. The ladder stays as the fallback for
+  // the first run of a season, or if the upstream call for last year's games fails.
   for (const t of (data.standingsPrev || [])) elo[t.id] = 1500 + (9.5 - t.rank) * PRIOR_SCALE;
+  for (const [id, r] of Object.entries(data.eloPrev || {})) elo[id] = 1500 + (r - 1500) * CARRY;
 
   const sorted = [...(data.games || [])].filter((g) => g.hteamid && g.ateamid).sort((a, b) => (a.unixtime || 0) - (b.unixtime || 0));
   for (const g of sorted) {

@@ -6,6 +6,8 @@
  * model's season accuracy, finds the next round, adds CORS, edge-caches 10min.
  */
 
+import { runModel } from '../../model.js';
+
 const UA = 'Cludestradamus/1.0 (+https://afl-oracle.pages.dev)';
 const CACHE_TTL = 600;
 // NOTE: new Date() at module top-level returns epoch (1970) in Workers - the clock is
@@ -26,15 +28,31 @@ export async function onRequestGet(context) {
   const cached = await cache.match(cacheKey);
   if (cached) return cors(cached);
 
-  let games, standings, tips, standingsPrev;
+  let games, standings, tips, standingsPrev, gamesPrev, standingsPrev2;
   try {
-    const [g, s, t, sp] = await Promise.all([
+    const [g, s, t, sp, gp, sp2] = await Promise.all([
       sq(`games;year=${Y}`), sq(`standings;year=${Y}`), sq(`tips;year=${Y}`),
       sq(`standings;year=${Y - 1}`).catch(() => ({ standings: [] })),
+      // last season, replayed below into the starting ratings for this one
+      sq(`games;year=${Y - 1}`).catch(() => ({ games: [] })),
+      sq(`standings;year=${Y - 2}`).catch(() => ({ standings: [] })),
     ]);
     games = g.games || []; standings = s.standings || []; tips = t.tips || []; standingsPrev = sp.standings || [];
+    gamesPrev = gp.games || []; standingsPrev2 = sp2.standings || [];
   } catch (e) {
     return cors(json({ error: String(e) }, 502));
+  }
+
+  // Replay last season to get the ratings each club finished on, which model.js carries into this
+  // season instead of restarting from the ladder. Only the 18 numbers travel, not the games, so the
+  // payload is unchanged in size. An empty result is fine - model.js falls back to the ladder prior.
+  let eloPrev = {};
+  try {
+    if (gamesPrev.length) {
+      eloPrev = runModel({ games: gamesPrev, standings: standingsPrev, standingsPrev: standingsPrev2 }).elo;
+    }
+  } catch (e) {
+    eloPrev = {};
   }
 
   // drawn games (Squiggle marks a draw as winnerteamid null) are excluded from grading for
@@ -57,7 +75,7 @@ export async function onRequestGet(context) {
   const ids = new Set(games.filter(g => g.round === nextRound).map(g => g.id));
   const nextRoundTips = tips.filter(t => ids.has(t.gameid));
 
-  const resp = json({ fetched_at: new Date().toISOString(), year: Y, games, standings, standingsPrev, experts, nextRound, nextRoundTips });
+  const resp = json({ fetched_at: new Date().toISOString(), year: Y, games, standings, standingsPrev, eloPrev, experts, nextRound, nextRoundTips });
   resp.headers.set('Cache-Control', `public, max-age=${CACHE_TTL}`);
   context.waitUntil(cache.put(cacheKey, resp.clone()));
   return cors(resp);

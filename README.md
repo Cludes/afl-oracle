@@ -15,11 +15,22 @@ each round's pick is computed using only games played *before* that round - so t
 a genuine, hindsight-free record, fully reproducible from public data. No AI, no API key.
 
 The **pick** and the **confidence** come off two different curves over the same rating gap. The pick
-uses Elo's own 400 scale, which also drives the rating update. The published probability uses a 225
-divisor, because measured against 2022-2026 results the 400 curve is badly under-confident - games it
-called at 0.67 were won 83% of the time. Since a pick is just the sign of the rating gap, sharpening
-the probability cannot change who is tipped: accuracy is 70.0% either way, while the comp-scoring
-rate improves about 20% (leave-one-season-out: +0.0257 bits/game).
+uses Elo's own 400 scale, which also drives the rating update. The published probability uses
+`SHOW_DIV`, because measured against 2022-2026 results the 400 curve is badly under-confident - games
+it called at 0.67 were won 83% of the time. Since a pick is just the sign of the rating gap,
+sharpening cannot change who is tipped, only how loudly it is said.
+
+A season also **starts from where the last one finished**: `/api/data` replays last season and passes
+each club's final rating, which the model carries in regressed 40% toward the mean. Last year's
+ladder is a lossy summary by comparison - it knows where a club finished, not how good it had become.
+Of everything tested against five seasons (rest days, adaptive K, finals weighting, home-ground
+familiarity, scaling the travel edge), this was worth more than all the rest combined. Clubs also get
+a small extra edge at the ground they actually call home, since Geelong at Kardinia Park is not
+Geelong at the MCG.
+
+Scored the way the Monash comp scores (`bits = 1 + log2(p)`), leave-one-season-out: 0.1311 -> 0.1724
+bits/game, a 31% improvement, with tipping accuracy unchanged at ~70%. On 2026 alone that is 0.1618
+-> 0.2306, which is the difference between 77th and 18th of the 121 full-season tippers in that comp.
 
 Data comes from the keyless [Squiggle API](https://api.squiggle.com.au/) (games, ladder, and every
 model's tips), proxied through a Cloudflare Pages Function (`/api/data`) that adds CORS, tallies the
