@@ -82,6 +82,27 @@ each game.
     node scripts/backtest-comp.mjs                     # blend vs Elo, season by season
     node scripts/backtest-comp.mjs --sources-for 2028  # next season's model list for comp.js
 
+## Checking the tips landed
+
+At the top of the Monash comp a season is decided by about 0.2 bits - 0.001 a game - while one missed
+game costs roughly 0.26. So one silent "No Tip" can cost the season, and the submitter only knows
+the form came back without an error. `.github/workflows/check-monash-ladder.yml` reads the public
+ladder every Wednesday (`scripts/check-ladder.mjs`, no login needed) and fails if any game in the two
+most recent scored rounds shows "No Tip" or we are missing entirely. It also logs, per game, what
+submitting mid-week cost against the same blend on the final pre-game tips - the timing penalty the
+backtest cannot see. Run it any time with `node scripts/check-ladder.mjs [--round N]`.
+
+## What has been tried on the blend, and did not help
+
+Tested leave-one-season-out, nested (the method chosen on four seasons, scored on the fifth):
+ranking models on two or three past seasons instead of one, re-ranking each round on in-season form,
+weighting better models more heavily, 8 to 15 models, and separate strengths for market and models.
+Every variant landed within 0.001 bits/game of the shipped blend, and choosing among them per fold
+scored slightly *worse* (0.1990 vs 0.2012) - the extra freedom fits noise. A home-team correction
+chose the same sign in every fold (home sides won 58.1% against 57.0% implied) but is worth
++0.0001 held out, so it is not applied. Recombining these same inputs has nothing left to give;
+more would need information none of them has.
+
 ## Before round 1 each season
 
 1. `node scripts/backtest-comp.mjs --sources-for <year>` and add the list to `SOURCES_BY_SEASON` in

@@ -1,0 +1,33 @@
+name: Check tips landed on the Monash ladder
+
+# The submitter only knows the form came back without an error. The public Monash ladder is the
+# independent record of what was actually scored, and at the top of that comp one missed game
+# (~0.26 bits) is worth more than the whole gap between first and second over a season (~0.2).
+# So once a week, read it: this fails if any game shows "No Tip" or we are missing entirely, and it
+# logs what submitting mid-week cost against the blend on final pre-game tips.
+#
+# Wednesday, because Monash usually scores a round by Tuesday; the script checks the two most recent
+# scored rounds so one that was still unscored on the day is not skipped. No secrets needed.
+
+on:
+  schedule:
+    - cron: '17 0 * * 3'   # Wed 10:17 AEST / 11:17 AEDT
+  workflow_dispatch:
+    inputs:
+      round:
+        description: 'Round to check (blank = the two most recent scored rounds)'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Check the ladder
+        run: node scripts/check-ladder.mjs ${{ inputs.round && format('--round {0}', inputs.round) || '' }}
