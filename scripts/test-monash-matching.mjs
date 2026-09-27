@@ -21,7 +21,7 @@ const row = (n, ground, home, away) =>
 function check(name, formRows, tips, expected) {
   const html = '<HTML><FORM ACTION="processTips.cgi.pl" METHOD="POST">' +
     '<INPUT TYPE="hidden" NAME="name" VALUE="x"><TABLE>' + formRows.join('') + '</TABLE></FORM>';
-  const fields = tips.map((_, i) => 'game' + (i + 1));
+  const fields = formRows.map((_, i) => 'game' + (i + 1)); // box names come from the form, as in the real submitter
   const got = mapTips(tips, gameRows(html, fields.length), fields);
   const ok = JSON.stringify(got) === JSON.stringify(expected);
   if (!ok) failed++;
@@ -74,6 +74,17 @@ check('form in a different order', [
   { hteam: 'Essendon', ateam: 'Richmond', hconfidence: 45 },
   { hteam: 'Melbourne', ateam: 'Collingwood', hconfidence: 70 },
 ], { game1: '0.70', game2: '0.45' });
+
+// A late run where Monash has already dropped the game under way: the form has fewer rows than
+// the feed has games, and the remaining boxes must still land on the right games.
+check('form missing a game that has started', [
+  row(1, 'MCG', 'Geelong', 'Carlton'),
+  row(2, 'SCG', 'Sydney', 'Brisbane'),
+], [
+  { hteam: 'Fremantle', ateam: 'Hawthorn', hconfidence: 67 },
+  { hteam: 'Geelong', ateam: 'Carlton', hconfidence: 61 },
+  { hteam: 'Sydney', ateam: 'Brisbane Lions', hconfidence: 53 },
+], { game1: '0.61', game2: '0.53' });
 
 console.log(failed ? failed + ' test(s) failed' : 'all tests passed');
 process.exit(failed ? 1 : 0);

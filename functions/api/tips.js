@@ -50,10 +50,14 @@ export async function onRequestGet(context) {
       confidence: p.conf,                          // % chance our tipped team wins
       hmargin,                                     // predicted margin (home perspective, may be negative)
       margin: p.margin,                            // predicted margin for our tipped team (always positive)
+      started: (g.complete || 0) > 0,              // under way or finished - too late to tip
     };
   });
 
-  const resp = json({ source: 'Cludestradamus', generated: new Date().toISOString(), year: data.year, round, tips });
+  // `open` is false once every game in the round has started - including the whole off-season, when
+  // the feed is left pointing at a Grand Final that is already over. Consumers should submit nothing.
+  const open = tips.some((t) => !t.started);
+  const resp = json({ source: 'Cludestradamus', generated: new Date().toISOString(), year: data.year, round, open, tips });
   resp.headers.set('Cache-Control', 'public, max-age=600');
   return cors(resp);
 }

@@ -1,12 +1,17 @@
 name: Submit tips to Monash
 
 # The Monash probabilistic comp has no API, so this logs into its web form and posts the
-# probabilities from /api/tips. It runs twice before each round (Wed and Thu mornings AEST)
-# because resubmitting a round overwrites the previous entry - the second run just picks up
-# any fixture or model movement since the first.
+# probabilities from /api/tips. It runs three mornings before each round because resubmitting
+# overwrites the previous entry: Tuesday gets tips in as soon as last round's Monday game is in
+# the ratings, and Wednesday/Thursday are retries. One failed run already cost a Thursday-night
+# game (round 26, 2026), so two chances was one too few.
+#
+# Off-season, and in any week where every game has started, the feed reports `open: false` and
+# the script exits 0 without logging in, so the schedule stays green until March.
 
 on:
   schedule:
+    - cron: '0 23 * * 1'   # Tue 09:00 AEST / 10:00 AEDT
     - cron: '0 23 * * 2'   # Wed 09:00 AEST / 10:00 AEDT
     - cron: '0 23 * * 3'   # Thu 09:00 AEST / 10:00 AEDT
   workflow_dispatch:
@@ -30,10 +35,10 @@ jobs:
   submit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Check the game matching
         run: node scripts/test-monash-matching.mjs
       - name: Submit tips

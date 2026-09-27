@@ -40,6 +40,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 async function main() {
   if (!USER || !PASS) die('MONASH_USER and MONASH_PASS must be set');
   const feed = await getJson(roundArg ? TIPS_URL + '?round=' + roundArg : TIPS_URL);
+  // Nothing to tip is a normal state, not a failure: the off-season, or a round whose games have all
+  // started. Exiting 0 keeps the weekly schedule from failing (and emailing) every week until March.
+  // A round passed by hand is submitted regardless, since that is an explicit request.
+  if (roundArg == null && (!feed.tips || !feed.tips.length || feed.open === false)) {
+    log('nothing to submit: round ' + feed.round + ' has ' + (feed.tips ? feed.tips.length : 0) + ' games, none still to start');
+    return;
+  }
   if (!feed.tips || !feed.tips.length) die('no tips in the feed for round ' + feed.round);
   const round = roundArg != null ? Number(roundArg) : feed.round;
   log('feed: round ' + round + ', ' + feed.tips.length + ' games (generated ' + feed.generated + ')');
@@ -149,7 +156,9 @@ function gameRows(html, count) {
 }
 
 function mapTips(tips, rows, gameFields) {
-  if (rows.length !== tips.length) {
+  // The form may list FEWER games than the feed if Monash drops ones already under way; each row is
+  // still matched to its game by name, so that is safe. More rows than the feed has games is not.
+  if (rows.length > tips.length || (ASSUME_ORDER && rows.length !== tips.length)) {
     die('the form has ' + rows.length + ' games but the feed has ' + tips.length + ' - refusing to guess');
   }
   const out = {};
