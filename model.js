@@ -12,7 +12,9 @@ export const HGA_BASE = 20;   // base home edge (same-state game)
 export const HGA_TRAVEL = 10; // extra when the away team is playing interstate
 export const HGA_WEST = 30;   // extra again when the trip crosses to/from WA (the long haul)
 export const K = 10;          // Elo update factor (lower = steadier ratings)
-export const MARGIN_DIV = 5;  // Elo diff -> predicted margin
+export const MARGIN_DIV = 6;  // Elo diff -> predicted margin (tuned on margin MAE, see scripts/backtest.mjs)
+export const SHOT_WEIGHT = 0.75;   // share of the update margin taken from scoring shots, not the scoreboard
+export const POINTS_PER_SHOT = 3.65; // league points per scoring shot, measured over 2021-2026
 export const PRIOR_SCALE = 5; // pre-season prior spread from last year's ladder (fallback only)
 export const SHOW_DIV = 250;  // Elo diff -> REPORTED probability (see below)
 export const CARRY = 0.6;     // share of last season's rating gap carried into this one
@@ -84,7 +86,7 @@ export function runModel(data) {
   const elo = {};
   const getElo = (id) => (id in elo ? elo[id] : 1500);
   const TEAM = {}, RANK = {}, FORM = {}, PRED = {};
-  const OUR = { correct: 0, total: 0 };
+  const OUR = { correct: 0, total: 0, bits: 0 };
 
   for (const t of (data.standings || [])) { TEAM[t.id] = t.name; RANK[t.id] = t.rank; }
   for (const g of (data.games || [])) { TEAM[g.hteamid] = g.hteam; TEAM[g.ateamid] = g.ateam; }
@@ -112,23 +114,35 @@ export function runModel(data) {
     };
     if (g.complete === 100) {
       // Squiggle marks a draw with winnerteamid null (not 0) - a completed game with no winner is a
-      // draw, excluded from grading (margin 0 makes it a no-op for Elo anyway).
+      // draw, excluded from grading. For the ratings it counts as half a win each way, sized by the
+      // scoring-shot margin, so a draw one side dominated still moves them.
       const draw = g.winnerteamid == null || g.winnerteamid === 0;
       if (!draw) {
         OUR.total++; const right = PRED[g.id].pickId === g.winnerteamid;
         if (right) OUR.correct++; PRED[g.id].right = right;
+        // the Monash/Squiggle probabilistic score: 1 + log2(probability given to the winner)
+        OUR.bits += 1 + Math.log2(g.winnerteamid === g.hteamid ? pShow : 1 - pShow);
         (FORM[g.hteamid] = FORM[g.hteamid] || []).push(g.winnerteamid === g.hteamid);
         (FORM[g.ateamid] = FORM[g.ateamid] || []).push(g.winnerteamid === g.ateamid);
       }
+      // How big a win was it? Goal-kicking accuracy on the day is mostly noise, so the number of
+      // scoring SHOTS each side generated is the steadier read on who dominated: a 20-shot to
+      // 10-shot game that finished level on the board was not really a draw. Blending the two beat
+      // the plain scoreboard margin in every season 2022-2026. It only sets the SIZE of the
+      // update - who actually won still comes from the real score.
       const am = g.hscore - g.ascore;
+      const hasShots = [g.hgoals, g.hbehinds, g.agoals, g.abehinds].every(Number.isFinite);
+      const shotMargin = hasShots ? ((g.hgoals + g.hbehinds) - (g.agoals + g.abehinds)) * POINTS_PER_SHOT : am;
+      const updateMargin = (1 - SHOT_WEIGHT) * am + SHOT_WEIGHT * shotMargin;
       const actualHome = draw ? 0.5 : (am > 0 ? 1 : 0);
       // 538-style margin-of-victory multiplier (damps blowouts, corrects upsets faster)
       const winnerEdge = actualHome === 1 ? (eH + H - eA) : (eA - (eH + H));
-      const mov = Math.log(Math.abs(am) + 1) * (2.2 / (winnerEdge * 0.001 + 2.2));
+      const mov = Math.log(Math.abs(updateMargin) + 1) * (2.2 / (winnerEdge * 0.001 + 2.2));
       const ch = K * mov * (actualHome - pHome);
       elo[g.hteamid] = eH + ch; elo[g.ateamid] = eA - ch;
     }
   }
   OUR.pct = OUR.total ? (OUR.correct / OUR.total * 100) : 0;
+  OUR.bitsPerGame = OUR.total ? OUR.bits / OUR.total : 0;
   return { elo, TEAM, RANK, FORM, PRED, OUR };
 }

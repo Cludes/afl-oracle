@@ -1,6 +1,6 @@
 // Cludestradamus - this file is rendering only. The prediction model lives in model.js, shared with
 // the /api/tips endpoint so what the site shows and what we submit to a comp can never drift apart.
-import { runModel } from './model.js';
+import { runModel, TEAM_STATE, VENUE_STATE } from './model.js';
 
 const $ = id => document.getElementById(id);
 
@@ -25,7 +25,7 @@ function prep() {
   Object.assign(RANK, m.RANK);
   Object.assign(FORM, m.FORM);
   Object.assign(PRED, m.PRED);
-  OUR.correct = m.OUR.correct; OUR.total = m.OUR.total; OUR.pct = m.OUR.pct;
+  OUR.correct = m.OUR.correct; OUR.total = m.OUR.total; OUR.pct = m.OUR.pct; OUR.bitsPerGame = m.OUR.bitsPerGame;
 }
 
 function formStr(id) {
@@ -43,7 +43,8 @@ function reason(g, p) {
   if (rW && rO && rW < rO) bits.push(`${rO - rW} spot${rO - rW > 1 ? 's' : ''} higher on the ladder`);
   const fm = formStr(p.pickId);
   if (fm.n >= 3) bits.push(`${fm.w} of their last ${fm.n} won`);
-  if (p.homePick) bits.push(`at home at ${g.venue || 'home'}`);
+  // only a real home game - at a neutral venue (a Grand Final at the MCG) the 'home' side is a label
+  if (p.homePick && VENUE_STATE[g.venue] && VENUE_STATE[g.venue] === TEAM_STATE[g.hteam]) bits.push(`at home at ${g.venue}`);
   return bits.slice(0, 3).join(', ') + '.';
 }
 
@@ -78,12 +79,14 @@ function renderTips() {
   $('rnext').disabled = idx >= rounds.length - 1;
   const rec = roundRecord(r);
   $('roundrec').textContent = rec.t ? `${rec.c}/${rec.t} correct` : (r === DATA.nextRound ? 'upcoming' : '');
-  const games = DATA.games.filter(g => g.round === r).sort((a, b) => (a.unixtime || 0) - (b.unixtime || 0));
+  // a finals fixture can be listed before both teams are known; there is nothing to predict yet
+  const games = DATA.games.filter(g => g.round === r && PRED[g.id]).sort((a, b) => (a.unixtime || 0) - (b.unixtime || 0));
   if (!games.length) { $('tips').innerHTML = '<div class="empty">No fixtures.</div>'; return; }
   $('tips').innerHTML = games.map(g => {
     const p = PRED[g.id]; const win = TEAM[p.pickId];
     const done = g.complete === 100 && g.winnerteamid != null;
-    const conf = p.conf, lean = conf >= 68 ? 'strong' : conf >= 57 ? 'lean' : 'toss-up';
+    // bands chosen so each label means something (2022-2026): strong tips won 85%, lean 64%, toss-up 57%
+    const conf = p.conf, lean = conf >= 75 ? 'strong' : conf >= 60 ? 'lean' : 'toss-up';
     return `<div class="game ${done ? (p.right ? 'hit' : 'miss') : ''}">
       <div class="matchup">
         <span class="${p.pickId === g.hteamid ? 'pick' : ''}">${g.hteam}</span>
@@ -111,13 +114,17 @@ function renderBoard() {
   const minTotal = Math.max(5, Math.round(OUR.total * 0.5));
   const rows = DATA.experts
     .filter(e => e.total >= minTotal)
-    .map(e => ({ source: e.source, correct: e.correct, total: e.total, pct: e.correct / e.total * 100 }));
-  rows.push({ source: '★ Cludestradamus (this model)', correct: OUR.correct, total: OUR.total, pct: OUR.pct, us: true });
+    .map(e => ({ source: e.source, correct: e.correct, total: e.total, pct: e.correct / e.total * 100, bpg: e.bits / e.total }));
+  rows.push({ source: '★ Cludestradamus (this model)', correct: OUR.correct, total: OUR.total, pct: OUR.pct, bpg: OUR.bitsPerGame, us: true });
+  // Two different questions: how often you pick the winner, and how well you priced it. The
+  // probabilistic comps score the second (bits = 1 + log2 of the chance given to the winner), and
+  // that is what the model is tuned for, so show both and rank each.
+  const bitsRank = [...rows].sort((a, b) => b.bpg - a.bpg).findIndex(r => r.us) + 1;
   rows.sort((a, b) => b.pct - a.pct);
   const ourRank = rows.findIndex(r => r.us) + 1;
-  $('boardnote').textContent = `This model ranks #${ourRank} of ${rows.length} tipsters (${OUR.correct}/${OUR.total}, ${OUR.pct.toFixed(1)}%).`;
-  $('board').innerHTML = `<table><thead><tr><th>#</th><th class="l">Tipster</th><th>Correct</th><th>%</th></tr></thead><tbody>${
-    rows.map((r, i) => `<tr class="${r.us ? 'us' : ''}"><td>${i + 1}</td><td class="l">${r.source}</td><td>${r.correct}/${r.total}</td><td><b>${r.pct.toFixed(1)}</b></td></tr>`).join('')
+  $('boardnote').textContent = `This model ranks #${ourRank} of ${rows.length} on tips (${OUR.correct}/${OUR.total}, ${OUR.pct.toFixed(1)}%) and #${bitsRank} on bits per game (${OUR.bitsPerGame.toFixed(3)}).`;
+  $('board').innerHTML = `<table><thead><tr><th>#</th><th class="l">Tipster</th><th>Correct</th><th>%</th><th>Bits/g</th></tr></thead><tbody>${
+    rows.map((r, i) => `<tr class="${r.us ? 'us' : ''}"><td>${i + 1}</td><td class="l">${r.source}</td><td>${r.correct}/${r.total}</td><td><b>${r.pct.toFixed(1)}</b></td><td>${r.bpg.toFixed(3)}</td></tr>`).join('')
   }</tbody></table>`;
 }
 
