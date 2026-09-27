@@ -86,5 +86,16 @@ check('form missing a game that has started', [
   { hteam: 'Sydney', ateam: 'Brisbane Lions', hconfidence: 53 },
 ], { game1: '0.61', game2: '0.53' });
 
+// The Monash entry is the market + models blend, not the Elo: when a tip carries `comp`, that is
+// what gets sent (the 2026 Grand Final: Elo 55% Fremantle, blend 46%).
+check('blend sent instead of the Elo', [row(1, 'MCG', 'Fremantle', 'Brisbane')],
+  [{ hteam: 'Fremantle', ateam: 'Brisbane Lions', hconfidence: 55, comp: { hconfidence: 46, basis: 'market+models', models: 9 } }],
+  { game1: '0.46' });
+
+// ...and it flips like everything else when the form lists the game the other way round.
+check('blend flipped for an away-first row', [row(1, 'MCG', 'Brisbane', 'Fremantle')],
+  [{ hteam: 'Fremantle', ateam: 'Brisbane Lions', hconfidence: 55, comp: { hconfidence: 46, basis: 'market+models', models: 9 } }],
+  { game1: '0.54' });
+
 console.log(failed ? failed + ' test(s) failed' : 'all tests passed');
 process.exit(failed ? 1 : 0);

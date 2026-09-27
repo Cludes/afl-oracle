@@ -1,19 +1,25 @@
 name: Submit tips to Monash
 
 # The Monash probabilistic comp has no API, so this logs into its web form and posts the
-# probabilities from /api/tips. It runs three mornings before each round because resubmitting
-# overwrites the previous entry: Tuesday gets tips in as soon as last round's Monday game is in
-# the ratings, and Wednesday/Thursday are retries. One failed run already cost a Thursday-night
-# game (round 26, 2026), so two chances was one too few.
-#
-# Off-season, and in any week where every game has started, the feed reports `open: false` and
-# the script exits 0 without logging in, so the schedule stays green until March.
+# probabilities from /api/tips - the market + models blend in comp.js. Resubmitting overwrites
+# the previous entry, so the runs stack up through the week:
+#   - Tue/Wed/Thu mornings get tips in early and retry each other. One failed run already cost a
+#     Thursday-night game (round 26, 2026), so two chances was one too few.
+#   - Thu/Fri late afternoon refresh with fresher market prices and model tips, which move
+#     through the week. Whichever of these runs is last before the round's first bounce is the
+#     one that counts.
+# A scheduled run never touches a round once any game has started (what resubmitting does to a
+# game already under way is unverified), and off-season the feed reports `open: false`; both
+# exit 0 without logging in, so the schedule stays green. The :17 minute keeps the late runs
+# clear of GitHub's top-of-the-hour queue, which can delay a run past the bounce.
 
 on:
   schedule:
     - cron: '0 23 * * 1'   # Tue 09:00 AEST / 10:00 AEDT
     - cron: '0 23 * * 2'   # Wed 09:00 AEST / 10:00 AEDT
     - cron: '0 23 * * 3'   # Thu 09:00 AEST / 10:00 AEDT
+    - cron: '17 6 * * 4'   # Thu 16:17 AEST / 17:17 AEDT - before a Thursday-night opener
+    - cron: '17 6 * * 5'   # Fri 16:17 AEST / 17:17 AEDT - before a Friday-night opener
   workflow_dispatch:
     inputs:
       round:

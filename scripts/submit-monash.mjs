@@ -8,8 +8,14 @@ import { pathToFileURL } from 'node:url';
  *   2. POST that form back, with game1..gameN filled in   -> processTips.cgi.pl confirms
  *
  * In the probabilistic comp (comp=info) each gameN is the probability the HOME team wins,
- * as a decimal 0-1. Those come from our own /api/tips feed, so what gets submitted can
- * never drift from what the site shows.
+ * as a decimal 0-1. It sends each tip's `comp` probability from /api/tips - the blend of the
+ * betting market and last season's best Squiggle models, see comp.js - which beat the Elo by a
+ * wide margin. MONASH_SOURCE=elo sends the Elo instead.
+ *
+ * A scheduled run never touches a round once any of its games has started: tips can be changed
+ * until each game's start, but what a resubmission does to games already under way has not been
+ * verified. Passing --round N (the workflow's round input) submits regardless, which is how to
+ * recover a round that no scheduled run managed to submit.
  *
  * Usage: MONASH_USER=.. MONASH_PASS=.. node scripts/submit-monash.mjs [--round N] [--dry-run]
  *
@@ -22,6 +28,7 @@ const PRESENT = BASE + 'cgi-bin/presentTips.cgi.pl';
 const TIPS_URL = process.env.TIPS_URL || 'https://afl-oracle.pages.dev/api/tips';
 const UA = process.env.MONASH_UA || 'Cludestradamus/1.0 (+https://afl-oracle.pages.dev)';
 const COMP = process.env.MONASH_COMP || 'info';
+const SOURCE = process.env.MONASH_SOURCE || 'comp'; // 'comp' (market + models blend) or 'elo'
 const CLAMP = 0.01; // never submit 0 or 1 - the info comp scores those as an infinite penalty
 
 const args = process.argv.slice(2);
@@ -48,8 +55,25 @@ async function main() {
     return;
   }
   if (!feed.tips || !feed.tips.length) die('no tips in the feed for round ' + feed.round);
+  const underway = feed.tips.filter((t) => t.started).length;
+  if (roundArg == null && underway) {
+    log('round ' + feed.round + ' is under way (' + underway + ' of ' + feed.tips.length + ' games started), so it is left as ' +
+        'already submitted. To submit it anyway, run with --round ' + feed.round + '.');
+    return;
+  }
   const round = roundArg != null ? Number(roundArg) : feed.round;
   log('feed: round ' + round + ', ' + feed.tips.length + ' games (generated ' + feed.generated + ')');
+  if (SOURCE === 'comp') {
+    log('sending the market + models blend, models chosen from ' + feed.comp_models_from + ': ' + (feed.comp_models || []).join(', '));
+    if (feed.comp_models_from != null && feed.comp_models_from < feed.year) {
+      log('  note: that model list is from ' + feed.comp_models_from + ' - regenerate it for ' + feed.year +
+          ' with `node scripts/backtest-comp.mjs --sources-for ' + feed.year + '` and add it to comp.js');
+    }
+    const eloOnly = feed.tips.filter((t) => t.comp && t.comp.basis === 'elo').length;
+    if (eloOnly) log('  note: ' + eloOnly + ' game(s) have no market price or model tips yet, so fall back to the Elo; a later run will refresh them');
+  } else {
+    log('sending the Elo (MONASH_SOURCE=elo)');
+  }
 
   const html = await post(PRESENT, { name: USER, passwd: PASS, comp: COMP, round: String(round) });
   if (!/name=["']?game1["']?/i.test(html)) {
@@ -65,7 +89,12 @@ async function main() {
   const rows = gameRows(html, form.gameFields.length);
   const values = mapTips(feed.tips, rows, form.gameFields);
 
-  form.gameFields.forEach((f, i) => log('  ' + f + ' = ' + values[f] + '  (' + rows[i].label + ')'));
+  form.gameFields.forEach((f, i) => {
+    const t = rows[i].tip;
+    const basis = SOURCE === 'comp' && t && t.comp ? t.comp.basis + (t.comp.models ? ', ' + t.comp.models + ' models' : '') : 'elo';
+    const was = form.existing[f] ? '  [form currently holds ' + form.existing[f] + ']' : '';
+    log('  ' + f + ' = ' + values[f] + '  ' + (t ? t.hteam + ' v ' + t.ateam : '') + ' (' + basis + ')' + was);
+  });
 
   if (DRY) { log('dry run - would POST ' + Object.keys(form.fields).length + ' carried fields + ' + form.gameFields.length + ' probabilities to ' + form.action); return; }
 
@@ -117,13 +146,18 @@ function parseForm(html) {
 
   const fields = {};
   const gameFields = [];
+  const existing = {}; // what each probability box already holds - shows whether Monash pre-fills
   for (const tag of html.match(/<input\b[^>]*>/gi) || []) {
     const name = attr(tag, 'name');
     if (!name) continue;
     const type = (attr(tag, 'type') || 'text').toLowerCase();
     if (type === 'submit' || type === 'button' || type === 'reset') continue;
     if ((type === 'checkbox' || type === 'radio') && !/\bchecked\b/i.test(tag)) continue;
-    if (/^game\d+$/i.test(name)) { if (!gameFields.includes(name)) gameFields.push(name); continue; }
+    if (/^game\d+$/i.test(name)) {
+      if (!gameFields.includes(name)) gameFields.push(name);
+      existing[name] = attr(tag, 'value') || '';
+      continue;
+    }
     fields[name] = attr(tag, 'value') || '';
   }
   for (const sel of html.match(/<select\b[\s\S]*?<\/select>/gi) || []) {
@@ -133,7 +167,7 @@ function parseForm(html) {
     fields[name] = chosen ? (attr(chosen, 'value') || '') : '';
   }
   gameFields.sort((a, b) => num(a) - num(b));
-  return { action, fields, gameFields };
+  return { action, fields, gameFields, existing };
 }
 
 /**
@@ -153,6 +187,11 @@ function gameRows(html, count) {
     const label = text(html.slice(from, mark.at)).replace(/\s+/g, ' ').trim().slice(-200);
     return { name: mark.name, label, teams: findTeams(label) };
   }).slice(0, count);
+}
+
+/** The home-win percentage to send for a tip: the blend when it is there, the Elo otherwise. */
+function homePct(tip) {
+  return SOURCE === 'comp' && tip.comp && Number.isFinite(tip.comp.hconfidence) ? tip.comp.hconfidence : tip.hconfidence;
 }
 
 function mapTips(tips, rows, gameFields) {
@@ -192,7 +231,9 @@ function mapTips(tips, rows, gameFields) {
       tip = tips[i];
       used.add(i);
     }
-    out[gameFields[i]] = clamp((flip ? 100 - tip.hconfidence : tip.hconfidence) / 100).toFixed(2);
+    row.tip = tip;
+    const home = homePct(tip);
+    out[gameFields[i]] = clamp((flip ? 100 - home : home) / 100).toFixed(2);
   });
   return out;
 }

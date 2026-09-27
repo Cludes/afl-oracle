@@ -17,9 +17,9 @@ reproducible from public data. No AI, no API key.
 
 One honest caveat about the season record the site shows: it is recomputed with the **current**
 model, and the model's settings were chosen by testing against past seasons, this one included. So it
-is a backtest, not a locked-in record, and it changes whenever the model does. The genuinely locked-in
-record is what was actually submitted: the [Monash ladder](https://probabilistic-footy.monash.edu/~footy/ladder.shtml)
-under the alias Cludestradamus.
+is a backtest, not a locked-in record, and it changes whenever the model does. (The
+[Monash ladder](https://probabilistic-footy.monash.edu/~footy/ladder.shtml) under the alias
+Cludestradamus is locked in, but from 2027 it records the Monash entry below, not this Elo.)
 
 The **pick** and the **confidence** come off two different curves over the same rating gap. The pick
 uses Elo's own 400 scale, which also drives the rating update. The published probability uses
@@ -57,6 +57,45 @@ Things tested and rejected, so nobody re-runs them: rest days, adaptive or final
 scaling the travel edge, and removing the home edge at neutral venues (a Grand Final at the MCG
 still scores better WITH the nominal home side's edge, over 95 such games).
 
+## The Monash entry is not the Elo
+
+The site, and `hconfidence` in `/api/tips`, are the Elo - that is what Cludestradamus is. What gets
+submitted to the Monash comp is `comp.js`: a blend of the betting market (Squiggle's "Punters") and
+the 10 Squiggle models that scored best the previous season, 40/60 in log-odds, stretched x1.2
+because averaging pulls toward 0.5.
+
+The reason is simply that it wins. Leave-one-season-out over 2022-2026 the blend scored 0.2012
+bits/game against the Elo's 0.1773, and in every fold it gave the Elo zero weight - the market and
+the best models already know everything the Elo does. Scored against the real 2026 Monash field game
+by game, it would have finished **2nd of 76** full-season tippers, 0.001 bits/game behind the winner,
+where the Elo finished 18th. Allowing for luck (bootstrapping the games), that is roughly a 1-in-3
+chance of winning a season, 72% top three and 97% top ten. It is not a lock: the top five are
+separated by less than one season's worth of noise.
+
+Two honest limits. Squiggle's archive holds each tip's *final* pre-game value, and ours is submitted
+during the week, so live results will land somewhat below the backtest - by an amount that can be
+measured after a few rounds, by comparing our submitted values (on the Monash ladder) with Squiggle's
+finals. And Monash itself runs a "BookieOdds" auto-tipper and lists it among its "honest
+algorithms", so an odds-based entry is squarely within its rules; everything used is public before
+each game.
+
+    node scripts/backtest-comp.mjs                     # blend vs Elo, season by season
+    node scripts/backtest-comp.mjs --sources-for 2028  # next season's model list for comp.js
+
+## Before round 1 each season
+
+1. `node scripts/backtest-comp.mjs --sources-for <year>` and add the list to `SOURCES_BY_SEASON` in
+   `comp.js`. Without it the previous list is reused (it still works, just a year stale), and every
+   run's log says so.
+2. Once the fixture is out, **Run workflow** with *dry_run* ticked. Check each box maps to the right
+   game, and note whether the log shows `[form currently holds ...]` - that says whether Monash
+   pre-fills existing tips, which decides the next point.
+3. Scheduled runs deliberately never touch a round once a game has started, because what a
+   resubmission does to games already under way is unverified. To find out: after round 1's first
+   game, run the workflow with the round number (which bypasses the guard), then check round 1 on the
+   Monash ladder once it is scored - if game 1 still shows the value from before its bounce,
+   resubmitting mid-round is safe, and weekend refresh runs could be added for later games.
+
 ## Backtest
 
     node scripts/backtest.mjs [--from 2022] [--to 2026] [--model path/to/model.js]
@@ -77,7 +116,9 @@ perspective (`hmargin`). Add `?round=N` for a past round.
 
 `open` is false once every game in the round has started, which is also the whole off-season (the
 feed keeps pointing at the finished Grand Final until the new fixture starts). Each tip also carries
-`started`.
+`started`, and `comp` - the Monash entry's home-win probability (`comp.hconfidence`), what it was
+built from (`basis`: market+models, market, models, or elo when neither has been posted yet), and how
+many of the chosen models had tipped. `comp_models` names them.
 
     https://afl-oracle.pages.dev/api/tips
 
@@ -92,11 +133,14 @@ The models on the Tipster Ranking are the Squiggle bot community. To compete for
   it: it reads `/api/tips`, logs in (`cgi-bin/presentTips.cgi.pl`), matches each of the form's
   probability boxes to a game **by team name** (flipping the probability if the form lists the away
   team first, and refusing to submit rather than guessing if a row will not match), and posts
-  `game1..gameN` as the home team's win probability, clamped to 0.01-0.99 so a wrong tip can't score
-  an infinite penalty. `.github/workflows/submit-monash-tips.yml` runs it Tue, Wed and Thu mornings
-  AEST - resubmitting a round overwrites the previous entry, so the later runs are retries that also
-  pick up any movement. When the feed says `open: false` it exits 0 without logging in, so the
-  off-season is quiet rather than a failed run every week. The form may list fewer games than the
+  `game1..gameN` as the home team's win probability (the blend above, not the Elo), clamped to
+  0.01-0.99 so a wrong tip can't score an infinite penalty. `.github/workflows/submit-monash-tips.yml`
+  runs it Tue, Wed and Thu mornings plus Thu and Fri late afternoon AEST - resubmitting overwrites the
+  previous entry, so the mornings retry each other and the afternoons refresh with fresher prices;
+  the last run before the first bounce is the one that counts. Once any game has started a scheduled
+  run leaves the round alone, and when the feed says `open: false` (the off-season) it exits 0 without
+  logging in. To submit a round by hand - say, to recover one no scheduled run managed - run the
+  workflow with the round number, which bypasses both. The form may list fewer games than the
   feed if Monash drops ones already under way; each box is still matched by name, so that is fine.
   Credentials come from the repo secrets `MONASH_TIPPING_SECRET_USER` / `MONASH_TIPPING_SECRET_PW`.
 
